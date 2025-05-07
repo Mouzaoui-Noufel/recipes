@@ -14,22 +14,27 @@ use Illuminate\Support\Facades\Validator;
 
 class RecipeController extends Controller
 {
-    public function index()
+public function index()
 {
     $search = request()->get('search', '');
+    $page = request()->get('page', 1);
 
-    $query = Recipe::with('category', 'user')
-        ->withCount('ratings')
-        ->withAvg('ratings', 'rating');
+    $cacheKey = 'recipes_page_' . $page . '_search_' . md5($search);
 
-    if ($search) {
-        $query->where(function ($q) use ($search) {
-            $q->where('title', 'like', '%' . $search . '%')
-              ->orWhere('description', 'like', '%' . $search . '%');
-        });
-    }
+    $recipes = Cache::remember($cacheKey, 60, function () use ($search) {
+        $query = Recipe::with('category', 'user')
+            ->withCount('ratings')
+            ->withAvg('ratings', 'rating');
 
-    $recipes = $query->paginate(5);
+        if ($search) {
+            $query->where(function ($q) use ($search) {
+                $q->where('title', 'like', '%' . $search . '%')
+                  ->orWhere('description', 'like', '%' . $search . '%');
+            });
+        }
+
+        return $query->paginate(6);
+    });
 
     return view('recipes.index', compact('recipes'));
 }
@@ -41,32 +46,32 @@ class RecipeController extends Controller
     }
 
     public function store(Request $request)
-    {
-        $validated = $request->validate([
-            'title' => 'required|string|max:255',
-            'description' => 'nullable|string',
-            'ingredients' => 'required|string',
-            'steps' => 'required|string',
-            'image' => 'nullable|image|mimes:jpg,jpeg,png|max:2048',
-            'category_id' => 'nullable|exists:categories,id',
-        ]);
+{
+    $validated = $request->validate([
+        'title' => 'required|string|max:255',
+        'description' => 'nullable|string',
+        'ingredients' => 'required|string',
+        'steps' => 'required|string',
+        'image' => 'nullable|image|mimes:jpg,jpeg,png|max:2048',
+        'category_id' => 'nullable|exists:categories,id',
+    ]);
 
-        if ($request->hasFile('image')) {
-            $validated['image'] = $request->file('image')->store('recipes', 'public');
-        }
-
-        $validated['user_id'] = auth()->id();
-
-        $recipe = Recipe::create($validated);
-
-        $users = User::where('id', '!=', auth()->id())->get();
-        Notification::send($users, new NewRecipeNotification($recipe));
-
-        \Illuminate\Support\Facades\Cache::forget('recipes');
-
-        return redirect()->route('recipes.index')->with('success', 'Recipe created!');
+    if ($request->hasFile('image')) {
+        $validated['image'] = $request->file('image')->store('recipes', 'public');
     }
 
+    $validated['user_id'] = auth()->id();
+
+    $recipe = Recipe::create($validated);
+
+    $users = User::where('id', '!=', auth()->id())->get();
+    Notification::send($users, new NewRecipeNotification($recipe));
+
+    // Clear all cache to ensure new recipe shows up immediately
+    Cache::flush();
+
+    return redirect()->route('recipes.index')->with('success', 'Recipe created!');
+}
     public function show(Recipe $recipe)
     {
         return view('recipes.show', compact('recipe'));
@@ -102,25 +107,51 @@ class RecipeController extends Controller
     }
 
     public function destroy(Recipe $recipe)
-    {
-        if ($recipe->image) Storage::disk('public')->delete($recipe->image);
-        $recipe->delete();
-
-        $page = request()->get('page', 1);
-        $search = request()->get('search', '');
-
-        $queryParams = [];
-        if ($page > 1) {
-            $queryParams['page'] = $page;
-        }
-        if ($search) {
-            $queryParams['search'] = $search;
-        }
-
-        \Illuminate\Support\Facades\Cache::forget('recipes');
-
-        return redirect()->route('recipes.index', $queryParams)->with('success', 'Recipe deleted!');
+{
+    // Delete image if it exists
+    if ($recipe->image) {
+        Storage::disk('public')->delete($recipe->image);
     }
+
+    // Delete the recipe
+    $recipe->forceDelete();
+
+
+    // Grab search and page params from request
+    $search = request()->get('search', '');
+    $page = (int) request()->get('page', 1);
+
+    // Define pagination limit
+    $perPage = 5;
+
+    // Get total recipe count *after* deletion
+    $totalRecipes = Recipe::count();
+
+    // Calculate the new last page
+    $lastPage = max(1, (int) ceil($totalRecipes / $perPage));
+
+    // Adjust page number if current page is out of bounds
+    if ($page > $lastPage) {
+        $page = $lastPage;
+    }
+
+    // Build query parameters array for redirection
+    $queryParams = [];
+    if ($page > 1) {
+        $queryParams['page'] = $page;
+    }
+    if (!empty($search)) {
+        $queryParams['search'] = $search;
+    }
+
+    // Clear the specific cached page
+    Cache::forget('recipes_page_' . $page . '_search_' . md5($search));
+
+    // Redirect to updated list with message
+    return redirect()->route('recipes.index', $queryParams)
+                     ->with('success', 'Recipe deleted successfully.');
+}
+
     public function rate(Request $request, Recipe $recipe)
 {
     $request->validate(['rating' => 'required|integer|between:1,5']);

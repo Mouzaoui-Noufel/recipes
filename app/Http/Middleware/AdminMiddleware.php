@@ -14,11 +14,15 @@ class AdminMiddleware
      * @param  \Closure(\Illuminate\Http\Request): (\Symfony\Component\HttpFoundation\Response)  $next
      */
     public function handle($request, Closure $next)
-{
-    if (auth()->check() && auth()->user()->is_admin) {
-        return $next($request);
+    {
+        if (auth()->check() && auth()->user()->is_admin) {
+            return $next($request);
+        }
+
+        if ($request->expectsJson()) {
+            return response()->json(['message' => 'Forbidden. Admins only.'], 403);
+        }
+
+        return redirect()->route('admin.login');
     }
-    
-    abort(403);
-}
 }

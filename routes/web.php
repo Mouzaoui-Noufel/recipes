@@ -3,62 +3,46 @@
 use App\Http\Controllers\ProfileController;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\RecipeController;
-use App\Http\Controllers\Auth\AuthenticatedSessionController;
-use App\Http\Controllers\Auth\RegisteredUserController;
-use App\Http\Controllers\AdminController;
+use App\Http\Controllers\UserAuthController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\UserController;
 
 
 Route::get('/', function () {
-    return view('welcome');
+    return redirect('/recipes');
+})->name('home');
+
+Route::redirect('/login', '/user/login')->name('login');
+Route::redirect('/register', '/user/register')->name('register');
+Route::redirect('/signin', '/user/register')->name('signin');
+
+
+
+
+// User Authentication Routes
+Route::prefix('user')->group(function () {
+    Route::get('/register', [UserAuthController::class, 'showRegistrationForm'])
+        ->middleware('guest')
+        ->name('user.register');
+
+    Route::post('/register', [UserAuthController::class, 'register'])
+        ->middleware('guest');
+
+    Route::get('/login', [UserAuthController::class, 'showLoginForm'])
+        ->middleware('guest')
+        ->name('user.login');
+
+    Route::post('/login', [UserAuthController::class, 'login'])
+        ->middleware('guest');
+
+    Route::post('/logout', [UserAuthController::class, 'logout'])
+        ->middleware('auth')
+        ->name('user.logout');
+
+    Route::get('/dashboard', [UserAuthController::class, 'dashboard'])
+        ->middleware('auth')
+        ->name('user.dashboard');
 });
-
-// Authentication Routes
-Route::get('/login', [AuthenticatedSessionController::class, 'create'])
-    ->middleware('guest')
-    ->name('login');
-
-Route::post('/login', [AuthenticatedSessionController::class, 'store'])
-    ->middleware('guest');
-
-Route::post('/logout', [AuthenticatedSessionController::class, 'destroy'])
-    ->middleware('auth')
-    ->name('logout');
-
-Route::get('/register', [RegisteredUserController::class, 'create'])
-    ->middleware('guest')
-    ->name('register');
-
-Route::post('/register', [RegisteredUserController::class, 'store'])
-    ->middleware('guest');
-
-// Authentication Routes
-Route::get('/login', [AuthenticatedSessionController::class, 'create'])
-    ->middleware('guest')
-    ->name('login');
-
-Route::post('/login', [AuthenticatedSessionController::class, 'store'])
-    ->middleware('guest');
-
-Route::post('/logout', [AuthenticatedSessionController::class, 'destroy'])
-    ->middleware('auth')
-    ->name('logout');
-
-Route::get('/register', [RegisteredUserController::class, 'create'])
-    ->middleware('guest')
-    ->name('register');
-
-Route::post('/register', [RegisteredUserController::class, 'store'])
-    ->middleware('guest');
-
-// Signin Routes (registration)
-Route::get('/signin', [RegisteredUserController::class, 'create'])
-    ->middleware('guest')
-    ->name('signin');
-
-Route::post('/signin', [RegisteredUserController::class, 'store'])
-    ->middleware('guest');
 
 Route::middleware(['auth'])->group(function () {
     Route::resource('recipes', RecipeController::class)->except(['index', 'show']);
@@ -72,12 +56,3 @@ Route::middleware(['auth'])->group(function () {
 
 Route::resource('recipes', RecipeController::class)->only(['index', 'show']);
 
-Route::get('/dashboard', function () {
-    return redirect()->route('recipes.index');
-})->name('dashboard');
-
-Route::prefix('admin')->middleware(['auth', 'admin'])->group(function () {
-    Route::get('/dashboard', [AdminController::class, 'dashboard'])->name('admin.dashboard');
-    Route::resource('categories', CategoryController::class);
-    Route::resource('users', UserController::class);
-});

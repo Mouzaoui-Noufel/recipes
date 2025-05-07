@@ -76,6 +76,12 @@ class Recipe extends Model
     // Accessor pour l'URL de l'image
     public function getImageUrlAttribute(): ?string
     {
-        return $this->image ? asset('storage/' . $this->image) : null;
+        if ($this->image) {
+            if (preg_match('/^https?:\/\//', $this->image)) {
+                return $this->image;
+            }
+            return asset('storage/' . $this->image);
+        }
+        return null;
     }
 }
